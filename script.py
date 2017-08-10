@@ -9,6 +9,10 @@ import pandas as pd
 dataset = pd.read_csv('train.csv')
 
 
+""""
+Data Preprocessing
+""""
+
 # Convert pickup date to days of week
 from datetime import date
 dates = dataset.iloc[:, 2].values
@@ -47,18 +51,44 @@ for i in dates:
 #    elif (18 < time < 24):
 #        timeOfDay.append('Night')
 
+# Using the elbow method to find the optimal number of clusters
+from sklearn.cluster import KMeans
+wcss = []
+X_locations_pickup = dataset.iloc[:,[5,6]].values
+X_locations_dropoff = dataset.iloc[:,[7,8]].values
+for i in range(1, 11):
+    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
+    kmeans.fit(X_locations_pickup)
+    wcss.append(kmeans.inertia_)
+plt.plot(range(1, 11), wcss)
+plt.title('The Elbow Method')
+plt.xlabel('Number of clusters')
+plt.ylabel('WCSS')
+plt.show()
+
+
+
+# Fitting K-Means to the dataset
+kmeans = KMeans(n_clusters = 4, init = 'k-means++', random_state = 42)
+y_kmeans_pickup = kmeans.fit_predict(X_locations_pickup)
+y_kmeans_dropoff = kmeans.fit_predict(X_locations_dropoff)
+
+
+
 # Concatenate generated columns
 dfMonths = pd.DataFrame({'Month of Year': monthOfYear})
 dfDays = pd.DataFrame({'Days of Week': daysOfWeek})
 dfTimes = pd.DataFrame({'Time of the Day': timeOfDay})
 dfDistances = pd.DataFrame({'Distances': distances})
+dfPickup = pd.DataFrame({'Pickup Cluster': y_kmeans_pickup})
+dfDropoff = pd.DataFrame({'Dropoff Cluster': y_kmeans_dropoff})
 
-result = pd.concat([dataset, dfMonths, dfDays, dfTimes, dfDistances], axis = 1)
+result = pd.concat([dataset, dfMonths, dfDays, dfTimes, dfDistances, dfPickup, dfDropoff], axis = 1)
 
-result.to_csv('result.csv')
+# result.to_csv('result.csv')
 
 # Encoding categorical data
-X = result.iloc[:, [4,11,12,13,14]].values
+X = result.iloc[:, [4,11,12,13,14, 15, 16]].values
 y = result.iloc[:, 10].values
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 labelencoder = LabelEncoder()
@@ -68,6 +98,8 @@ for i in range(4):
     X[:, i] = labelencoder.fit_transform(X[:, i])
 #onehotencoder = OneHotEncoder(categorical_features = all)
 #X = onehotencoder.fit_transform(X).toarray()
+
+
 
 
 # Splitting the dataset into the Training set and Test set
@@ -99,13 +131,6 @@ def rmsle(predicted,real):
 
 rmsle(y_pred, y_test)
     
-
-
-
-
-
-
-
 
 
 # Actual test file prediction
