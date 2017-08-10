@@ -89,8 +89,16 @@ regressor.fit(X_train, y_train)
 y_pred = regressor.predict(X_test)
 
 
+def rmsle(predicted,real):
+    sum=0.0
+    for x in range(len(predicted)):
+        p = np.log(predicted[x]+1)
+        r = np.log(real[x]+1)
+        sum = sum + (p - r)**2
+    return (sum/len(predicted))**0.5
 
-
+rmsle(y_pred, y_test)
+    
 
 
 
