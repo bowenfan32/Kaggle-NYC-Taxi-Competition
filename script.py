@@ -13,6 +13,22 @@ dataset = pd.read_csv('train.csv')
 Data Preprocessing
 """"
 
+# Remove outliers
+xlim = [-74.03, -73.77]
+ylim = [40.63, 40.85]
+dataset = dataset[(dataset.pickup_longitude> xlim[0]) & (dataset.pickup_longitude < xlim[1])]
+dataset = dataset[(dataset.dropoff_longitude> xlim[0]) & (dataset.dropoff_longitude < xlim[1])]
+dataset = dataset[(dataset.pickup_latitude> ylim[0]) & (dataset.pickup_latitude < ylim[1])]
+dataset = dataset[(dataset.dropoff_latitude> ylim[0]) & (dataset.dropoff_latitude < ylim[1])]
+dataset1 = dataset
+
+# Visualize data points
+longitude = list(dataset.pickup_longitude) + list(dataset.dropoff_longitude)
+latitude = list(dataset.pickup_latitude) + list(dataset.dropoff_latitude)
+plt.figure(figsize = (10,10))
+plt.plot(longitude,latitude,'.', alpha = 0.4, markersize = 0.05)
+plt.show()
+
 # Convert pickup date to days of week
 from datetime import date
 dates = dataset.iloc[:, 2].values
@@ -73,9 +89,23 @@ kmeans = KMeans(n_clusters = 4, init = 'k-means++', random_state = 42)
 y_kmeans_pickup = kmeans.fit_predict(X_locations_pickup)
 y_kmeans_dropoff = kmeans.fit_predict(X_locations_dropoff)
 
+# Visualising the clusters
+plt.scatter(X[y_kmeans_pickup == 0, 0], X[y_kmeans_pickup == 0, 1], s = 100, c = 'red', label = 'Cluster 1')
+plt.scatter(X[y_kmeans_pickup == 1, 0], X[y_kmeans_pickup == 1, 1], s = 100, c = 'blue', label = 'Cluster 2')
+plt.scatter(X[y_kmeans_pickup == 2, 0], X[y_kmeans_pickup == 2, 1], s = 100, c = 'green', label = 'Cluster 3')
+plt.scatter(X[y_kmeans_pickup == 3, 0], X[y_kmeans_pickup == 3, 1], s = 100, c = 'cyan', label = 'Cluster 4')
+plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1], s = 300, c = 'yellow', label = 'Centroids')
+plt.title('Clusters of customers')
+plt.xlabel('Annual Income (k$)')
+plt.ylabel('Spending Score (1-100)')
+plt.legend()
+plt.show()
+
+
 
 
 # Concatenate generated columns
+dfDataframe = pd.DataFrame(dataset)
 dfMonths = pd.DataFrame({'Month of Year': monthOfYear})
 dfDays = pd.DataFrame({'Days of Week': daysOfWeek})
 dfTimes = pd.DataFrame({'Time of the Day': timeOfDay})
@@ -83,7 +113,7 @@ dfDistances = pd.DataFrame({'Distances': distances})
 dfPickup = pd.DataFrame({'Pickup Cluster': y_kmeans_pickup})
 dfDropoff = pd.DataFrame({'Dropoff Cluster': y_kmeans_dropoff})
 
-result = pd.concat([dataset, dfMonths, dfDays, dfTimes, dfDistances, dfPickup, dfDropoff], axis = 1)
+result = pd.concat([dfDataframe, dfMonths, dfDays, dfTimes, dfDistances, dfPickup, dfDropoff], axis = 1)
 
 # result.to_csv('result.csv')
 
@@ -94,7 +124,7 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 labelencoder = LabelEncoder()
 
 
-for i in range(4):
+for i in range(1,3):
     X[:, i] = labelencoder.fit_transform(X[:, i])
 #onehotencoder = OneHotEncoder(categorical_features = all)
 #X = onehotencoder.fit_transform(X).toarray()
