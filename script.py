@@ -37,15 +37,15 @@ while i < len(pickup_lon):
 timeOfDay = []
 for i in dates:
     time = int(i[11:13])
-#    timeOfDay.append(time)
-    if (time <= 6):
-        timeOfDay.append('Midnight')
-    elif (6 < time <= 12):
-        timeOfDay.append('Morning')
-    elif (12 < time <= 18):
-        timeOfDay.append('Afternoon')
-    elif (18 < time < 24):
-        timeOfDay.append('Night')
+    timeOfDay.append(time)
+#    if (time <= 6):
+#        timeOfDay.append('Midnight')
+#    elif (6 < time <= 12):
+#        timeOfDay.append('Morning')
+#    elif (12 < time <= 18):
+#        timeOfDay.append('Afternoon')
+#    elif (18 < time < 24):
+#        timeOfDay.append('Night')
 
 # Concatenate generated columns
 dfMonths = pd.DataFrame({'Month of Year': monthOfYear})
@@ -91,7 +91,6 @@ y_pred = regressor.predict(X_test)
 
 
 
-    
 
 
 
@@ -127,14 +126,14 @@ timeOfDay_test = []
 for i in dates_test:
     time = int(i[11:13])
     timeOfDay_test.append(time)
-    if (time <= 6):
-        timeOfDay_test.append('Midnight')
-    elif (6 < time <= 12):
-        timeOfDay_test.append('Morning')
-    elif (12< time <= 18):
-        timeOfDay_test.append('Afternoon')
-    elif (18 < time <= 24):
-        timeOfDay_test.append('Night')
+#    if (time <= 6):
+#        timeOfDay_test.append('Midnight')
+#    elif (6 < time <= 12):
+#        timeOfDay_test.append('Morning')
+#    elif (12< time <= 18):
+#        timeOfDay_test.append('Afternoon')
+#    elif (18 < time <= 24):
+#        timeOfDay_test.append('Night')
 
 dfMonths_test = pd.DataFrame({'Month of Year': monthOfYear_test})
 dfDays_test = pd.DataFrame({'Days of Week': daysOfWeek_test})
