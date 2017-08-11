@@ -20,7 +20,11 @@ dataset = dataset[(dataset.pickup_longitude> xlim[0]) & (dataset.pickup_longitud
 dataset = dataset[(dataset.dropoff_longitude> xlim[0]) & (dataset.dropoff_longitude < xlim[1])]
 dataset = dataset[(dataset.pickup_latitude> ylim[0]) & (dataset.pickup_latitude < ylim[1])]
 dataset = dataset[(dataset.dropoff_latitude> ylim[0]) & (dataset.dropoff_latitude < ylim[1])]
-dataset1 = dataset
+
+dataset.to_csv('train_processed.csv', index = False)
+
+dataset = pd.read_csv('train_processed.csv')
+
 
 # Visualize data points
 longitude = list(dataset.pickup_longitude) + list(dataset.dropoff_longitude)
@@ -85,22 +89,9 @@ plt.show()
 
 
 # Fitting K-Means to the dataset
-kmeans = KMeans(n_clusters = 4, init = 'k-means++', random_state = 42)
+kmeans = KMeans(n_clusters = 10, init = 'k-means++', random_state = 42)
 y_kmeans_pickup = kmeans.fit_predict(X_locations_pickup)
 y_kmeans_dropoff = kmeans.fit_predict(X_locations_dropoff)
-
-# Visualising the clusters
-plt.scatter(X[y_kmeans_pickup == 0, 0], X[y_kmeans_pickup == 0, 1], s = 100, c = 'red', label = 'Cluster 1')
-plt.scatter(X[y_kmeans_pickup == 1, 0], X[y_kmeans_pickup == 1, 1], s = 100, c = 'blue', label = 'Cluster 2')
-plt.scatter(X[y_kmeans_pickup == 2, 0], X[y_kmeans_pickup == 2, 1], s = 100, c = 'green', label = 'Cluster 3')
-plt.scatter(X[y_kmeans_pickup == 3, 0], X[y_kmeans_pickup == 3, 1], s = 100, c = 'cyan', label = 'Cluster 4')
-plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1], s = 300, c = 'yellow', label = 'Centroids')
-plt.title('Clusters of customers')
-plt.xlabel('Annual Income (k$)')
-plt.ylabel('Spending Score (1-100)')
-plt.legend()
-plt.show()
-
 
 
 
@@ -129,7 +120,9 @@ for i in range(1,3):
 #onehotencoder = OneHotEncoder(categorical_features = all)
 #X = onehotencoder.fit_transform(X).toarray()
 
-
+"""
+Testing accuracy
+"""
 
 
 # Splitting the dataset into the Training set and Test set
@@ -144,7 +137,7 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, rando
 
 # Random Forest
 from sklearn.ensemble import RandomForestRegressor
-regressor = RandomForestRegressor(n_estimators = 10, random_state = 0)
+regressor = RandomForestRegressor(n_estimators = 5, random_state = 0)
 regressor.fit(X_train, y_train)
 
 # Predicting the Test set results
@@ -162,6 +155,9 @@ def rmsle(predicted,real):
 rmsle(y_pred, y_test)
     
 
+"""
+Testset prediction
+"""
 
 # Actual test file prediction
 testset = pd.read_csv('test.csv')
@@ -198,24 +194,35 @@ for i in dates_test:
 #    elif (18 < time <= 24):
 #        timeOfDay_test.append('Night')
 
+# Fitting K-Means to the dataset
+X_locations_pickup_test = testset.iloc[:,[4,5]].values
+X_locations_dropoff_test = testset.iloc[:,[6,7]].values
+kmeans = KMeans(n_clusters = 10, init = 'k-means++', random_state = 42)
+y_kmeans_pickup_test = kmeans.fit_predict(X_locations_pickup_test)
+y_kmeans_dropoff_test = kmeans.fit_predict(X_locations_dropoff_test)
+
+
+
 dfMonths_test = pd.DataFrame({'Month of Year': monthOfYear_test})
 dfDays_test = pd.DataFrame({'Days of Week': daysOfWeek_test})
 dfTimes_test = pd.DataFrame({'Time of the Day': timeOfDay_test})
 dfDistances_test = pd.DataFrame({'Distances': distances_test})
+dfPickup_test = pd.DataFrame({'Pickup Cluster': y_kmeans_pickup_test})
+dfDropoff_test = pd.DataFrame({'Dropoff Cluster': y_kmeans_dropoff_test})
 
-result_test = pd.concat([testset, dfMonths_test, dfDays_test, dfTimes_test, dfDistances_test], axis = 1)
+result_test = pd.concat([testset, dfMonths_test, dfDays_test, dfTimes_test, dfDistances_test, dfPickup_test, dfDropoff_test], axis = 1)
     
 result_test.to_csv('result_test.csv', index=False)
 
-X = result_test.iloc[:, [3,9,10,11,12]].values
+X_testset = result_test.iloc[:, [3,9,10,11,12,13,14]].values
 labelencoder = LabelEncoder()
-for i in range(4):
-    X[:, i] = labelencoder.fit_transform(X[:, i])
+for i in range(1,3):
+    X_testset[:, i] = labelencoder.fit_transform(X_testset[:, i])
 # onehotencoder = OneHotEncoder(categorical_features = all)
 # X = onehotencoder.fit_transform(X).toarray()
 dfx = pd.DataFrame(X)
 
-y_pred_test = regressor.predict(X)
+y_pred_test = regressor.predict(X_testset)
 dfTripDuration = pd.DataFrame({'trip_duration': y_pred_test})
 taxi_id = testset.iloc[:, 0].values
 dfId = pd.DataFrame({'id': taxi_id})
