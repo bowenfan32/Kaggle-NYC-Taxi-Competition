@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Tue Aug 15 15:50:23 2017
+
+@author: bowen
+"""
 
 # Importing the libraries
 import numpy as np
@@ -23,218 +28,185 @@ dataset = dataset[(dataset.dropoff_latitude> ylim[0]) & (dataset.dropoff_latitud
 
 dataset.to_csv('train_processed.csv', index = False)
 
-dataset = pd.read_csv('train_processed.csv')
+train = pd.read_csv('train_processed.csv')
 
 
+
+split = train.sample(frac=0.1, replace=True)
+
+"""
+Convert Datetime
+"""
+
+
+train['pickup_datetime'] = pd.to_datetime(train.pickup_datetime)
+train['dropoff_datetime'] = pd.to_datetime(train.dropoff_datetime)
+train['pickup_hour'] = train.pickup_datetime.dt.hour
+train['day_of_year'] = train.pickup_datetime.dt.dayofyear
+train['day_of_week'] = train.pickup_datetime.dt.dayofweek
+
+
+"""
+Visualization
+"""
+# Remove outliers
+xlim = [-74.03, -73.77]
+ylim = [40.63, 40.85]
+train = train[(train.pickup_longitude> xlim[0]) & (train.pickup_longitude < xlim[1])]
+train = train[(train.dropoff_longitude> xlim[0]) & (train.dropoff_longitude < xlim[1])]
+train = train[(train.pickup_latitude> ylim[0]) & (train.pickup_latitude < ylim[1])]
+train = train[(train.dropoff_latitude> ylim[0]) & (train.dropoff_latitude < ylim[1])]
 # Visualize data points
-longitude = list(dataset.pickup_longitude) + list(dataset.dropoff_longitude)
-latitude = list(dataset.pickup_latitude) + list(dataset.dropoff_latitude)
+longitude = list(train.pickup_longitude) + list(train.dropoff_longitude)
+latitude = list(train.pickup_latitude) + list(train.dropoff_latitude)
 plt.figure(figsize = (10,10))
 plt.plot(longitude,latitude,'.', alpha = 0.4, markersize = 0.05)
 plt.show()
 
-# Convert pickup date to days of week
-from datetime import date
-dates = dataset.iloc[:, 2].values
-daysOfWeek = []
-monthOfYear = []
-for i in dates:
-    dateObject = date(*map(int, i[:10].split('-')))
-    daysOfWeek.append( dateObject.strftime("%A") )
-    monthOfYear.append( dateObject.strftime("%B") )
-    
 
-# Convert pickup and dropoff coordinate to distances
-pickup_lon = dataset.iloc[:, 5].values
-pickup_lat = dataset.iloc[:, 6].values
-dropoff_lon = dataset.iloc[:, 7].values
-dropoff_lat = dataset.iloc[:, 8].values
+f,axarr = plt.subplots(ncols=2,nrows=1,figsize=(12,6))
+axarr[0].scatter(range(train.shape[0]), np.sort(train.trip_duration.values))
+q = train.trip_duration.quantile(0.99)
+train = train[train.trip_duration < q]
+axarr[1].scatter(range(train.shape[0]), np.sort(train.trip_duration.values))
 
-import geopy.distance
-i = 0
-distances = []
-while i < len(pickup_lon):
-    distances.append(geopy.distance.vincenty( (pickup_lat[i], pickup_lon[i]), (dropoff_lat[i], dropoff_lon[i]) ).km)  
-    i += 1
-    
-# Convert time to time of the day
-timeOfDay = []
-for i in dates:
-    time = int(i[11:13])
-    timeOfDay.append(time)
-#    if (time <= 6):
-#        timeOfDay.append('Midnight')
-#    elif (6 < time <= 12):
-#        timeOfDay.append('Morning')
-#    elif (12 < time <= 18):
-#        timeOfDay.append('Afternoon')
-#    elif (18 < time < 24):
-#        timeOfDay.append('Night')
-
-# Using the elbow method to find the optimal number of clusters
-from sklearn.cluster import KMeans
-wcss = []
-X_locations_pickup = dataset.iloc[:,[5,6]].values
-X_locations_dropoff = dataset.iloc[:,[7,8]].values
-for i in range(1, 11):
-    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
-    kmeans.fit(X_locations_pickup)
-    wcss.append(kmeans.inertia_)
-plt.plot(range(1, 11), wcss)
-plt.title('The Elbow Method')
-plt.xlabel('Number of clusters')
-plt.ylabel('WCSS')
 plt.show()
 
 
 
-# Fitting K-Means to the dataset
-kmeans = KMeans(n_clusters = 10, init = 'k-means++', random_state = 42)
-y_kmeans_pickup = kmeans.fit_predict(X_locations_pickup)
-y_kmeans_dropoff = kmeans.fit_predict(X_locations_dropoff)
-
-
-
-# Concatenate generated columns
-dfDataframe = pd.DataFrame(dataset)
-dfMonths = pd.DataFrame({'Month of Year': monthOfYear})
-dfDays = pd.DataFrame({'Days of Week': daysOfWeek})
-dfTimes = pd.DataFrame({'Time of the Day': timeOfDay})
-dfDistances = pd.DataFrame({'Distances': distances})
-dfPickup = pd.DataFrame({'Pickup Cluster': y_kmeans_pickup})
-dfDropoff = pd.DataFrame({'Dropoff Cluster': y_kmeans_dropoff})
-
-result = pd.concat([dfDataframe, dfMonths, dfDays, dfTimes, dfDistances, dfPickup, dfDropoff], axis = 1)
-
-# result.to_csv('result.csv')
-
-# Encoding categorical data
-X = result.iloc[:, [4,11,12,13,14, 15, 16]].values
-y = result.iloc[:, 10].values
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-labelencoder = LabelEncoder()
-
-
-for i in range(1,3):
-    X[:, i] = labelencoder.fit_transform(X[:, i])
-#onehotencoder = OneHotEncoder(categorical_features = all)
-#X = onehotencoder.fit_transform(X).toarray()
 
 """
-Testing accuracy
+Calculate Distances
 """
 
 
-# Splitting the dataset into the Training set and Test set
+import geopy.distance
+def getDistance (pickup_lat, pickup_lon, dropoff_lat, dropoff_lon):
+    return geopy.distance.vincenty( (pickup_lat, pickup_lon), (dropoff_lat, dropoff_lon) ).km
 
+
+#train['distance'] = getDistance(train.pickup_longitude, train.pickup_latitude,
+#                                train.dropoff_longitude, train.dropoff_latitude)
+
+train['trip_distance'] = train.apply(lambda x: getDistance(x['pickup_latitude'], 
+                                                       x['pickup_longitude'],
+                                                        x['dropoff_latitude'],
+                                                        x['dropoff_longitude']
+                                                       ), axis = 1 )
+
+
+"""
+K-means clustering
+"""
+
+from sklearn.cluster import MiniBatchKMeans
+
+coords = np.vstack((train[['pickup_latitude', 'pickup_longitude']].values, train[['dropoff_latitude', 'dropoff_longitude']].values))
+sample_ind = np.random.permutation(len(coords))[:500000]
+kmeans = MiniBatchKMeans(n_clusters=100, batch_size=10000).fit(coords[sample_ind])
+
+train['pickup_cluster'] = kmeans.predict(train[['pickup_latitude', 'pickup_longitude']])
+train['dropoff_cluster'] = kmeans.predict(train[['dropoff_latitude', 'dropoff_longitude']])
+
+
+
+
+"""
+Test set processing
+"""
+
+test = pd.read_csv('test.csv')
+test['pickup_cluster'] = kmeans.predict(test[['pickup_latitude', 'pickup_longitude']])
+test['dropoff_cluster'] = kmeans.predict(test[['dropoff_latitude', 'dropoff_longitude']])
+test.pickup_datetime=pd.to_datetime(test.pickup_datetime)
+test['pickup_hour'] = test.pickup_datetime.dt.hour
+test['day_of_year'] = test.pickup_datetime.dt.dayofyear
+test['day_of_week'] = test.pickup_datetime.dt.dayofweek
+test['trip_distance'] = test.apply(lambda x: getDistance(x['pickup_latitude'], 
+                                                       x['pickup_longitude'],
+                                                        x['dropoff_latitude'],
+                                                        x['dropoff_longitude']
+                                                       ), axis = 1 )
+
+
+
+
+"""
+Training and test split
+"""
+y = np.log(train['trip_duration'].values + 1)
 from sklearn.cross_validation import train_test_split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 0)
+features = ['vendor_id',
+             'pickup_hour',
+             'day_of_year',
+             'day_of_week',
+             'trip_distance',
+             'pickup_cluster',
+             'dropoff_cluster']
+X_train, X_test, y_train, y_test = train_test_split(train[features], y, test_size = 0.2, random_state = 0)
 
-# Fitting Multiple Linear Regression to the Training set
-# from sklearn.linear_model import LinearRegression
-# regressorLinear = LinearRegression()
-# regressorLinear.fit(X_train, y_train)
 
-# Random Forest
+
+
+"""
+Random Forest regressor
+"""
+
+#random forest
 from sklearn.ensemble import RandomForestRegressor
 regressor = RandomForestRegressor(n_estimators = 5, random_state = 0)
 regressor.fit(X_train, y_train)
-
-# Predicting the Test set results
+# Predicting random forest results
 y_pred = regressor.predict(X_test)
 
 
-def rmsle(predicted,real):
-    sum=0.0
-    for x in range(len(predicted)):
-        p = np.log(predicted[x]+1)
-        r = np.log(real[x]+1)
-        sum = sum + (p - r)**2
-    return (sum/len(predicted))**0.5
-
-rmsle(y_pred, y_test)
-    
 
 """
-Testset prediction
+XGBoost 
 """
 
-# Actual test file prediction
-testset = pd.read_csv('test.csv')
+import xgboost as xgb
+dtrain = xgb.DMatrix(X_train, label=y_train)
+dvalid = xgb.DMatrix(X_test, label=y_test)
+dtest = xgb.DMatrix(test[features])
+watchlist = [(dtrain, 'train'), (dvalid, 'valid')]
 
-dates_test = testset.iloc[:, 2].values
-daysOfWeek_test = []
-monthOfYear_test = []
-for i in dates_test:
-    dateObject_test = date(*map(int, i[:10].split('-')))
-    daysOfWeek_test.append( dateObject_test.strftime("%A") )
-    monthOfYear_test.append( dateObject_test.strftime("%B") )
+# Try different parameters! My favorite is random search :)
+xgb_pars = {'min_child_weight': 50, 'eta': 0.3, 'colsample_bytree': 0.3, 'max_depth': 10,
+            'subsample': 0.8, 'lambda': 1., 'nthread': -1, 'booster' : 'gbtree', 'silent': 1,
+            'eval_metric': 'rmse', 'objective': 'reg:linear'}
+# You could try to train with more epoch
+model = xgb.train(xgb_pars, dtrain, 60, watchlist, early_stopping_rounds=50,
+                  maximize=False, verbose_eval=10)
 
-pickup_lon = testset.iloc[:, 4].values
-pickup_lat = testset.iloc[:, 5].values
-dropoff_lon = testset.iloc[:, 6].values
-dropoff_lat = testset.iloc[:, 7].values
-
-i = 0
-distances_test = []
-while i < len(pickup_lon):
-    distances_test.append(geopy.distance.vincenty( (pickup_lat[i], pickup_lon[i]), (dropoff_lat[i], dropoff_lon[i]) ).km)  
-    i += 1
-    
-timeOfDay_test = []
-for i in dates_test:
-    time = int(i[11:13])
-    timeOfDay_test.append(time)
-#    if (time <= 6):
-#        timeOfDay_test.append('Midnight')
-#    elif (6 < time <= 12):
-#        timeOfDay_test.append('Morning')
-#    elif (12< time <= 18):
-#        timeOfDay_test.append('Afternoon')
-#    elif (18 < time <= 24):
-#        timeOfDay_test.append('Night')
-
-# Fitting K-Means to the dataset
-X_locations_pickup_test = testset.iloc[:,[4,5]].values
-X_locations_dropoff_test = testset.iloc[:,[6,7]].values
-kmeans = KMeans(n_clusters = 10, init = 'k-means++', random_state = 42)
-y_kmeans_pickup_test = kmeans.fit_predict(X_locations_pickup_test)
-y_kmeans_dropoff_test = kmeans.fit_predict(X_locations_dropoff_test)
+y_pred_xgb2 = model.predict(dtest)
 
 
 
-dfMonths_test = pd.DataFrame({'Month of Year': monthOfYear_test})
-dfDays_test = pd.DataFrame({'Days of Week': daysOfWeek_test})
-dfTimes_test = pd.DataFrame({'Time of the Day': timeOfDay_test})
-dfDistances_test = pd.DataFrame({'Distances': distances_test})
-dfPickup_test = pd.DataFrame({'Pickup Cluster': y_kmeans_pickup_test})
-dfDropoff_test = pd.DataFrame({'Dropoff Cluster': y_kmeans_dropoff_test})
 
-result_test = pd.concat([testset, dfMonths_test, dfDays_test, dfTimes_test, dfDistances_test, dfPickup_test, dfDropoff_test], axis = 1)
-    
-result_test.to_csv('result_test.csv', index=False)
+"""
+Calculate accuracy
+"""
 
-X_testset = result_test.iloc[:, [3,9,10,11,12,13,14]].values
-labelencoder = LabelEncoder()
-for i in range(1,3):
-    X_testset[:, i] = labelencoder.fit_transform(X_testset[:, i])
-# onehotencoder = OneHotEncoder(categorical_features = all)
-# X = onehotencoder.fit_transform(X).toarray()
-dfx = pd.DataFrame(X)
-
-y_pred_test = regressor.predict(X_testset)
-dfTripDuration = pd.DataFrame({'trip_duration': y_pred_test})
-taxi_id = testset.iloc[:, 0].values
-dfId = pd.DataFrame({'id': taxi_id})
-submission = pd.concat([dfId, dfTripDuration], axis = 1)
-
-submission.to_csv('submission.csv', index = False)
-
-    
-    
+#def rmsle(predicted,real):
+#    sum=0.0
+#    i= 0
+#    for x in range(len(predicted)):
+#
+#        p = np.log(predicted[x]+1)
+#        r = np.log(real[x]+1)
+#        sum = sum + (p - r)**2
+#    return (sum/len(predicted))**0.5
+#
+#error = rmsle(y_pred_xgb2, y_test)
+#print(error)
 
 
-    
 
-    
-    
+"""
+Submission
+"""
+
+test['trip_duration'] = np.exp(y_pred_xgb2) - 1
+out = test[['id','trip_duration']]
+out.to_csv('submission.csv', index = False)
