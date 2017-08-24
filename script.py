@@ -183,6 +183,74 @@ y_pred_xgb2 = model.predict(dtest)
 
 
 
+"""
+LightGBM
+"""
+
+
+import lightgbm as lgb
+def lgb_rmsle_score(preds, dtrain):
+    labels = np.exp(dtrain.get_label())
+    preds = np.exp(preds.clip(min=0))
+    return 'rmsle', np.sqrt(np.mean(np.square(np.log1p(preds)-np.log1p(labels)))), False
+
+d_train = lgb.Dataset(X_train, y_train)
+
+lgb_params = {
+    'learning_rate': 0.2, # try 0.2
+    'max_depth': 8,
+    'num_leaves': 55, 
+    'objective': 'regression',
+    #'metric': {'rmse'},
+    'feature_fraction': 0.9,
+    'bagging_fraction': 0.5,
+    #'bagging_freq': 5,
+    'max_bin': 200}       # 1000
+cv_result_lgb = lgb.cv(lgb_params,
+                       d_train, 
+                       num_boost_round=5000, 
+                       nfold=3, 
+                       feval=lgb_rmsle_score,
+                       early_stopping_rounds=50, 
+                       verbose_eval=100, 
+                       show_stdv=True)
+n_rounds = len(cv_result_lgb['rmsle-mean'])
+print('num_boost_rounds_lgb=' + str(n_rounds))
+
+
+
+
+def dummy_rmsle_score(preds, y):
+    return np.sqrt(np.mean(np.square(np.log1p(np.exp(preds))-np.log1p(np.exp(y)))))
+
+# Train a model
+model_lgb = lgb.train(lgb_params, 
+                      d_train, 
+                      feval=lgb_rmsle_score, 
+                      num_boost_round=n_rounds)
+# Predict on train
+y_train_pred = model_lgb.predict(X_train)
+print('RMSLE on train = {}'.format(dummy_rmsle_score(y_train_pred, y_train)))
+# Predict on validation
+y_valid_pred = model_lgb.predict(X_test)
+print('RMSLE on valid = {}'.format(dummy_rmsle_score(y_valid_pred, y_test)))
+
+y_test_pred_lightgbm = model_lgb.predict(test[features])
+
+
+
+
+
+"""
+List feature importance
+"""
+
+
+feature_imp = pd.Series(dict(zip(X_train.columns, model_lgb.feature_importance()))) \
+                    .sort_values(ascending=False)
+                    
+print(feature_imp)
+
 
 """
 Calculate accuracy
