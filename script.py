@@ -34,10 +34,11 @@ train = pd.read_csv('train_processed.csv')
 
 split = train.sample(frac=0.1, replace=True)
 
+
+
 """
 Convert Datetime
 """
-
 
 train['pickup_datetime'] = pd.to_datetime(train.pickup_datetime)
 train['dropoff_datetime'] = pd.to_datetime(train.dropoff_datetime)
@@ -85,6 +86,10 @@ def getDistance (pickup_lat, pickup_lon, dropoff_lat, dropoff_lon):
     return geopy.distance.vincenty( (pickup_lat, pickup_lon), (dropoff_lat, dropoff_lon) ).km
 
 
+def manhattan_distances(x1, x2, y1, y2):
+    return np.abs(x1 - x2) + np.abs(y1 - y2)
+
+
 #train['distance'] = getDistance(train.pickup_longitude, train.pickup_latitude,
 #                                train.dropoff_longitude, train.dropoff_latitude)
 
@@ -94,6 +99,10 @@ train['trip_distance'] = train.apply(lambda x: getDistance(x['pickup_latitude'],
                                                         x['dropoff_longitude']
                                                        ), axis = 1 )
 
+train['trip_distance_manhattan'] = manhattan_distances(train['pickup_longitude'],
+                                                      train['dropoff_longitude'],
+                                                     train['pickup_latitude'],
+                                                    train['dropoff_latitude'])
 
 """
 K-means clustering
@@ -127,7 +136,10 @@ test['trip_distance'] = test.apply(lambda x: getDistance(x['pickup_latitude'],
                                                         x['dropoff_latitude'],
                                                         x['dropoff_longitude']
                                                        ), axis = 1 )
-
+test['trip_distance_manhattan'] = manhattan_distances(test['pickup_longitude'],
+                                                      test['dropoff_longitude'],
+                                                     test['pickup_latitude'],
+                                                    test['dropoff_latitude'])
 
 
 
@@ -137,10 +149,12 @@ Training and test split
 y = np.log(train['trip_duration'].values + 1)
 from sklearn.cross_validation import train_test_split
 features = ['vendor_id',
+             'passenger_count',
              'pickup_hour',
              'day_of_year',
              'day_of_week',
              'trip_distance',
+             'trip_distance_manhattan',
              'pickup_cluster',
              'dropoff_cluster']
 X_train, X_test, y_train, y_test = train_test_split(train[features], y, test_size = 0.2, random_state = 0)
@@ -172,7 +186,7 @@ dtest = xgb.DMatrix(test[features])
 watchlist = [(dtrain, 'train'), (dvalid, 'valid')]
 
 # Try different parameters! My favorite is random search :)
-xgb_pars = {'min_child_weight': 50, 'eta': 0.3, 'colsample_bytree': 0.3, 'max_depth': 10,
+xgb_pars = {'min_child_weight': 50, 'eta': 0.3, 'colsample_bytree': 0.5, 'max_depth': 20,
             'subsample': 0.8, 'lambda': 1., 'nthread': -1, 'booster' : 'gbtree', 'silent': 1,
             'eval_metric': 'rmse', 'objective': 'reg:linear'}
 # You could try to train with more epoch
@@ -275,6 +289,6 @@ Calculate accuracy
 Submission
 """
 
-test['trip_duration'] = np.exp(y_pred_xgb2) - 1
+test['trip_duration'] = np.exp(y_test_pred_lightgbm) - 1
 out = test[['id','trip_duration']]
 out.to_csv('submission.csv', index = False)
