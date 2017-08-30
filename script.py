@@ -10,13 +10,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+
+""""
+Training Data Preprocessing
+""""
+
 # Importing the dataset
 dataset = pd.read_csv('train.csv')
 
+# Add Routes
+routes1 = pd.read_csv('fastest_routes_train_part_1.csv')
+routes2 = pd.read_csv('fastest_routes_train_part_2.csv')
+routes = routes1.append(routes2, ignore_index = True)
+routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
+dataset = pd.merge(dataset, routes, how = 'left', on = 'id')
 
-""""
-Data Preprocessing
-""""
+routes1_second = pd.read_csv('fastest_routes_train_part_1.csv')
+routes2_second = pd.read_csv('fastest_routes_train_part_2.csv')
+routes_second = routes1_second.append(routes2_second, ignore_index = True)
+routes_second = routes_second[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
+routes_second.columns = ['id', 'total_distance_2', 'total_travel_time_2', 'number_of_steps_2']
+dataset = pd.merge(dataset, routes_second, how = 'left', on = 'id')
+
+dataset.fillna(0, inplace = True)
 
 # Remove outliers
 xlim = [-74.03, -73.77]
@@ -28,18 +44,30 @@ dataset = dataset[(dataset.dropoff_latitude> ylim[0]) & (dataset.dropoff_latitud
 
 dataset.to_csv('train_processed.csv', index = False)
 
-train = pd.read_csv('train_processed.csv')
 
 
+"""
+Test Data Preprocessing
+"""
 
-split = train.sample(frac=0.1, replace=True)
+testset = pd.read_csv('test.csv')
 
+routes = pd.read_csv('fastest_routes_test.csv')
+routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
+testset = pd.merge(testset, routes, how = 'left', on = 'id')
 
+routes = pd.read_csv('second_fastest_routes_test.csv', engine = 'python', delimiter = ',', error_bad_lines=False)
+routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
+routes.columns = ['id', 'total_distance_2', 'total_travel_time_2', 'number_of_steps_2']
+testset = pd.merge(testset, routes, how = 'left', on = 'id')
+
+testset.to_csv('test_processed.csv', index = False)
 
 """
 Convert Datetime
 """
 
+train = pd.read_csv('train_processed.csv')
 train['pickup_datetime'] = pd.to_datetime(train.pickup_datetime)
 train['dropoff_datetime'] = pd.to_datetime(train.dropoff_datetime)
 train['pickup_hour'] = train.pickup_datetime.dt.hour
@@ -124,7 +152,7 @@ train['dropoff_cluster'] = kmeans.predict(train[['dropoff_latitude', 'dropoff_lo
 Test set processing
 """
 
-test = pd.read_csv('test.csv')
+test = pd.read_csv('test_processed.csv')
 test['pickup_cluster'] = kmeans.predict(test[['pickup_latitude', 'pickup_longitude']])
 test['dropoff_cluster'] = kmeans.predict(test[['dropoff_latitude', 'dropoff_longitude']])
 test.pickup_datetime=pd.to_datetime(test.pickup_datetime)
@@ -156,22 +184,16 @@ features = ['vendor_id',
              'trip_distance',
              'trip_distance_manhattan',
              'pickup_cluster',
-             'dropoff_cluster']
+             'dropoff_cluster',
+             'total_distance',
+             'total_travel_time',
+             'number_of_steps',
+#             'total_distance_2',
+#             'total_travel_time_2',
+#             'number_of_steps_2'
+             ]
 X_train, X_test, y_train, y_test = train_test_split(train[features], y, test_size = 0.2, random_state = 0)
 
-
-
-
-"""
-Random Forest regressor
-"""
-
-#random forest
-from sklearn.ensemble import RandomForestRegressor
-regressor = RandomForestRegressor(n_estimators = 5, random_state = 0)
-regressor.fit(X_train, y_train)
-# Predicting random forest results
-y_pred = regressor.predict(X_test)
 
 
 
@@ -186,14 +208,30 @@ dtest = xgb.DMatrix(test[features])
 watchlist = [(dtrain, 'train'), (dvalid, 'valid')]
 
 # Try different parameters! My favorite is random search :)
-xgb_pars = {'min_child_weight': 50, 'eta': 0.3, 'colsample_bytree': 0.5, 'max_depth': 20,
+xgb_pars = {'min_child_weight': 10, 'eta': 0.05, 'colsample_bytree': 0.8, 'max_depth': 10,
             'subsample': 0.8, 'lambda': 1., 'nthread': -1, 'booster' : 'gbtree', 'silent': 1,
             'eval_metric': 'rmse', 'objective': 'reg:linear'}
 # You could try to train with more epoch
-model = xgb.train(xgb_pars, dtrain, 60, watchlist, early_stopping_rounds=50,
+model = xgb.train(xgb_pars, dtrain, 6000, watchlist, early_stopping_rounds=50,
                   maximize=False, verbose_eval=10)
 
 y_pred_xgb2 = model.predict(dtest)
+
+
+
+
+
+
+#from sklearn.grid_search import GridSearchCV
+#cv_params = {'max_depth': [3,5,7], 'min_child_weight': [1,3,5]}
+#ind_params = {'learning_rate': 0.1, 'n_estimators': 1000, 'seed':0, 'subsample': 0.8, 'colsample_bytree': 0.8, 
+#             'objective': 'binary:logistic'}
+#optimized_GBM = GridSearchCV(xgb.XGBClassifier(**ind_params), 
+#                            cv_params, 
+#                             scoring = 'accuracy', cv = 5, n_jobs = -1) 
+#
+#optimized_GBM.fit(X_train, y_train)
+#print (optimized_GBM.grid_scores_)
 
 
 
@@ -211,27 +249,25 @@ def lgb_rmsle_score(preds, dtrain):
 d_train = lgb.Dataset(X_train, y_train)
 
 lgb_params = {
-    'learning_rate': 0.2, # try 0.2
+    'learning_rate': 0.05, # try 0.2
     'max_depth': 8,
-    'num_leaves': 55, 
+    'num_leaves': 80, 
     'objective': 'regression',
     #'metric': {'rmse'},
     'feature_fraction': 0.9,
     'bagging_fraction': 0.5,
     #'bagging_freq': 5,
-    'max_bin': 200}       # 1000
+    'max_bin': 1000}       # 1000
 cv_result_lgb = lgb.cv(lgb_params,
                        d_train, 
-                       num_boost_round=5000, 
+                       num_boost_round=50000, 
                        nfold=3, 
                        feval=lgb_rmsle_score,
                        early_stopping_rounds=50, 
-                       verbose_eval=100, 
+                       verbose_eval=50, 
                        show_stdv=True)
 n_rounds = len(cv_result_lgb['rmsle-mean'])
 print('num_boost_rounds_lgb=' + str(n_rounds))
-
-
 
 
 def dummy_rmsle_score(preds, y):
@@ -291,4 +327,4 @@ Submission
 
 test['trip_duration'] = np.exp(y_test_pred_lightgbm) - 1
 out = test[['id','trip_duration']]
-out.to_csv('submission.csv', index = False)
+out.drop_duplicates(subset = ['id'], keep = 'first').to_csv('submission.csv', index = False)
