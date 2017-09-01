@@ -25,12 +25,17 @@ routes = routes1.append(routes2, ignore_index = True)
 routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
 dataset = pd.merge(dataset, routes, how = 'left', on = 'id')
 
-routes1_second = pd.read_csv('fastest_routes_train_part_1.csv')
-routes2_second = pd.read_csv('fastest_routes_train_part_2.csv')
-routes_second = routes1_second.append(routes2_second, ignore_index = True)
-routes_second = routes_second[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
-routes_second.columns = ['id', 'total_distance_2', 'total_travel_time_2', 'number_of_steps_2']
-dataset = pd.merge(dataset, routes_second, how = 'left', on = 'id')
+## Add weather
+#weather = pd.read_csv('weather_daily.csv')
+#weather.replace('T', 0.001, inplace=True)
+#weather['date'] = pd.to_datetime(weather['date'], dayfirst=True).dt.date
+#weather['average temperature'] = weather['average temperature'].astype(np.float64)
+#weather['precipitation'] = weather['precipitation'].astype(np.float64)
+#weather['snow fall'] = weather['snow fall'].astype(np.float64)
+#weather['snow depth'] = weather['snow depth'].astype(np.float64)
+
+
+
 
 dataset.fillna(0, inplace = True)
 
@@ -56,10 +61,6 @@ routes = pd.read_csv('fastest_routes_test.csv')
 routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
 testset = pd.merge(testset, routes, how = 'left', on = 'id')
 
-routes = pd.read_csv('second_fastest_routes_test.csv', engine = 'python', delimiter = ',', error_bad_lines=False)
-routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
-routes.columns = ['id', 'total_distance_2', 'total_travel_time_2', 'number_of_steps_2']
-testset = pd.merge(testset, routes, how = 'left', on = 'id')
 
 testset.to_csv('test_processed.csv', index = False)
 
@@ -73,6 +74,9 @@ train['dropoff_datetime'] = pd.to_datetime(train.dropoff_datetime)
 train['pickup_hour'] = train.pickup_datetime.dt.hour
 train['day_of_year'] = train.pickup_datetime.dt.dayofyear
 train['day_of_week'] = train.pickup_datetime.dt.dayofweek
+
+
+
 
 
 """
@@ -132,6 +136,25 @@ train['trip_distance_manhattan'] = manhattan_distances(train['pickup_longitude']
                                                      train['pickup_latitude'],
                                                     train['dropoff_latitude'])
 
+
+"""
+Bearing feature
+"""
+
+
+def bearing_array(lat1, lng1, lat2, lng2):
+    AVG_EARTH_RADIUS = 6371  # in km
+    lng_delta_rad = np.radians(lng2 - lng1)
+    lat1, lng1, lat2, lng2 = map(np.radians, (lat1, lng1, lat2, lng2))
+    y = np.sin(lng_delta_rad) * np.cos(lat2)
+    x = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(lng_delta_rad)
+    return np.degrees(np.arctan2(y, x))
+
+train['direction'] = bearing_array(train['pickup_latitude'].values, train['pickup_longitude'].values, 
+                                          train['dropoff_latitude'].values, train['dropoff_longitude'].values)
+
+
+
 """
 K-means clustering
 """
@@ -145,7 +168,7 @@ kmeans = MiniBatchKMeans(n_clusters=100, batch_size=10000).fit(coords[sample_ind
 train['pickup_cluster'] = kmeans.predict(train[['pickup_latitude', 'pickup_longitude']])
 train['dropoff_cluster'] = kmeans.predict(train[['dropoff_latitude', 'dropoff_longitude']])
 
-
+train.to_csv('train_processed_converted', index=False)
 
 
 """
@@ -159,6 +182,9 @@ test.pickup_datetime=pd.to_datetime(test.pickup_datetime)
 test['pickup_hour'] = test.pickup_datetime.dt.hour
 test['day_of_year'] = test.pickup_datetime.dt.dayofyear
 test['day_of_week'] = test.pickup_datetime.dt.dayofweek
+test['direction'] = bearing_array(test['pickup_latitude'].values, test['pickup_longitude'].values, 
+                                         test['dropoff_latitude'].values, test['dropoff_longitude'].values)
+
 test['trip_distance'] = test.apply(lambda x: getDistance(x['pickup_latitude'], 
                                                        x['pickup_longitude'],
                                                         x['dropoff_latitude'],
@@ -169,7 +195,7 @@ test['trip_distance_manhattan'] = manhattan_distances(test['pickup_longitude'],
                                                      test['pickup_latitude'],
                                                     test['dropoff_latitude'])
 
-
+test.to_csv('test_processed_converted', index=False)
 
 """
 Training and test split
@@ -188,6 +214,7 @@ features = ['vendor_id',
              'total_distance',
              'total_travel_time',
              'number_of_steps',
+             'direction'
 #             'total_distance_2',
 #             'total_travel_time_2',
 #             'number_of_steps_2'
@@ -327,4 +354,5 @@ Submission
 
 test['trip_duration'] = np.exp(y_test_pred_lightgbm) - 1
 out = test[['id','trip_duration']]
-out.drop_duplicates(subset = ['id'], keep = 'first').to_csv('submission.csv', index = False)
+out.to_csv('submission.csv', index = False)
+#out.drop_duplicates(subset = ['id'], keep = 'first').to_csv('submission.csv', index = False)
