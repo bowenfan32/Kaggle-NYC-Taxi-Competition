@@ -171,6 +171,25 @@ train['dropoff_cluster'] = kmeans.predict(train[['dropoff_latitude', 'dropoff_lo
 train.to_csv('train_processed_converted', index=False)
 
 
+
+"""
+PCA features
+"""
+from sklearn.decomposition import PCA
+coords = np.vstack((train[['pickup_latitude', 'pickup_longitude']].values,
+                    train[['dropoff_latitude', 'dropoff_longitude']].values,
+                    test[['pickup_latitude', 'pickup_longitude']].values,
+                    test[['dropoff_latitude', 'dropoff_longitude']].values))
+
+pca = PCA().fit(coords)
+
+
+train['pickup_pca0'] = pca.transform(train[['pickup_latitude', 'pickup_longitude']])[:, 0]
+train['pickup_pca1'] = pca.transform(train[['pickup_latitude', 'pickup_longitude']])[:, 1]
+train['dropoff_pca0'] = pca.transform(train[['dropoff_latitude', 'dropoff_longitude']])[:, 0]
+train['dropoff_pca1'] = pca.transform(train[['dropoff_latitude', 'dropoff_longitude']])[:, 1]
+train['pca_manhattan'] = np.abs(train['dropoff_pca1'] - train['pickup_pca1']) + np.abs(train['dropoff_pca0'] - train['pickup_pca0'])
+
 """
 Test set processing
 """
@@ -195,6 +214,13 @@ test['trip_distance_manhattan'] = manhattan_distances(test['pickup_longitude'],
                                                      test['pickup_latitude'],
                                                     test['dropoff_latitude'])
 
+test['pickup_pca0'] = pca.transform(test[['pickup_latitude', 'pickup_longitude']])[:, 0]
+test['pickup_pca1'] = pca.transform(test[['pickup_latitude', 'pickup_longitude']])[:, 1]
+test['dropoff_pca0'] = pca.transform(test[['dropoff_latitude', 'dropoff_longitude']])[:, 0]
+test['dropoff_pca1'] = pca.transform(test[['dropoff_latitude', 'dropoff_longitude']])[:, 1]
+test['pca_manhattan'] = np.abs(test['dropoff_pca1'] - test['pickup_pca1']) + np.abs(test['dropoff_pca0'] - test['pickup_pca0'])
+
+
 test.to_csv('test_processed_converted', index=False)
 
 """
@@ -214,7 +240,12 @@ features = ['vendor_id',
              'total_distance',
              'total_travel_time',
              'number_of_steps',
-             'direction'
+             'direction',
+             'pickup_pca0',
+             'pickup_pca1',
+             'dropoff_pca0',
+             'dropoff_pca1',
+             'pca_manhattan'
 #             'total_distance_2',
 #             'total_travel_time_2',
 #             'number_of_steps_2'
