@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-""""
+"""
 Training Data Preprocessing
-""""
+"""
 
 # Importing the dataset
 dataset = pd.read_csv('train.csv')
@@ -25,27 +25,22 @@ routes = routes1.append(routes2, ignore_index = True)
 routes = routes[['id', 'total_distance', 'total_travel_time', 'number_of_steps']]
 dataset = pd.merge(dataset, routes, how = 'left', on = 'id')
 
-## Add weather
-#weather = pd.read_csv('weather_daily.csv')
-#weather.replace('T', 0.001, inplace=True)
-#weather['date'] = pd.to_datetime(weather['date'], dayfirst=True).dt.date
-#weather['average temperature'] = weather['average temperature'].astype(np.float64)
-#weather['precipitation'] = weather['precipitation'].astype(np.float64)
-#weather['snow fall'] = weather['snow fall'].astype(np.float64)
-#weather['snow depth'] = weather['snow depth'].astype(np.float64)
 
 
-
-
-dataset.fillna(0, inplace = True)
-
-# Remove outliers
+# Remove location outliers
 xlim = [-74.03, -73.77]
 ylim = [40.63, 40.85]
 dataset = dataset[(dataset.pickup_longitude> xlim[0]) & (dataset.pickup_longitude < xlim[1])]
 dataset = dataset[(dataset.dropoff_longitude> xlim[0]) & (dataset.dropoff_longitude < xlim[1])]
 dataset = dataset[(dataset.pickup_latitude> ylim[0]) & (dataset.pickup_latitude < ylim[1])]
 dataset = dataset[(dataset.dropoff_latitude> ylim[0]) & (dataset.dropoff_latitude < ylim[1])]
+
+#Remove trip duration outliers
+m = np.mean(dataset['trip_duration'])
+s = np.std(dataset['trip_duration'])
+dataset = dataset[dataset['trip_duration'] <= m + 2*s]
+dataset = dataset[dataset['trip_duration'] >= m - 2*s]
+
 
 dataset.to_csv('train_processed.csv', index = False)
 
@@ -64,6 +59,8 @@ testset = pd.merge(testset, routes, how = 'left', on = 'id')
 
 testset.to_csv('test_processed.csv', index = False)
 
+
+
 """
 Convert Datetime
 """
@@ -77,12 +74,10 @@ train['day_of_week'] = train.pickup_datetime.dt.dayofweek
 
 
 
-
-
 """
 Visualization
 """
-# Remove outliers
+# Remove location outliers
 xlim = [-74.03, -73.77]
 ylim = [40.63, 40.85]
 train = train[(train.pickup_longitude> xlim[0]) & (train.pickup_longitude < xlim[1])]
@@ -113,28 +108,30 @@ Calculate Distances
 """
 
 
-import geopy.distance
-def getDistance (pickup_lat, pickup_lon, dropoff_lat, dropoff_lon):
-    return geopy.distance.vincenty( (pickup_lat, pickup_lon), (dropoff_lat, dropoff_lon) ).km
+def haversine_distance(lat1, lng1, lat2, lng2):
+    lat1, lng1, lat2, lng2 = map(np.radians, (lat1, lng1, lat2, lng2))
+    AVG_EARTH_RADIUS = 6371  # in km
+    lat = lat2 - lat1
+    lng = lng2 - lng1
+    d = np.sin(lat * 0.5) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(lng * 0.5) ** 2
+    h = 2 * AVG_EARTH_RADIUS * np.arcsin(np.sqrt(d))
+    return h
+
+def manhattan_distance(lat1, lng1, lat2, lng2):
+    a = haversine_distance(lat1, lng1, lat1, lng2)
+    b = haversine_distance(lat1, lng1, lat2, lng1)
+    return a + b
 
 
-def manhattan_distances(x1, x2, y1, y2):
-    return np.abs(x1 - x2) + np.abs(y1 - y2)
+train['trip_distance'] = haversine_distance(train['pickup_latitude'], 
+                                                   train['pickup_longitude'],
+                                                    train['dropoff_latitude'],
+                                                    train['dropoff_longitude'])
 
-
-#train['distance'] = getDistance(train.pickup_longitude, train.pickup_latitude,
-#                                train.dropoff_longitude, train.dropoff_latitude)
-
-train['trip_distance'] = train.apply(lambda x: getDistance(x['pickup_latitude'], 
-                                                       x['pickup_longitude'],
-                                                        x['dropoff_latitude'],
-                                                        x['dropoff_longitude']
-                                                       ), axis = 1 )
-
-train['trip_distance_manhattan'] = manhattan_distances(train['pickup_longitude'],
-                                                      train['dropoff_longitude'],
-                                                     train['pickup_latitude'],
-                                                    train['dropoff_latitude'])
+train['trip_distance_manhattan'] = manhattan_distance(train['pickup_latitude'],
+                                                      train['pickup_longitude'],
+                                                     train['dropoff_latitude'],
+                                                    train['dropoff_longitude'])
 
 
 """
@@ -143,7 +140,6 @@ Bearing feature
 
 
 def bearing_array(lat1, lng1, lat2, lng2):
-    AVG_EARTH_RADIUS = 6371  # in km
     lng_delta_rad = np.radians(lng2 - lng1)
     lat1, lng1, lat2, lng2 = map(np.radians, (lat1, lng1, lat2, lng2))
     y = np.sin(lng_delta_rad) * np.cos(lat2)
@@ -168,7 +164,7 @@ kmeans = MiniBatchKMeans(n_clusters=100, batch_size=10000).fit(coords[sample_ind
 train['pickup_cluster'] = kmeans.predict(train[['pickup_latitude', 'pickup_longitude']])
 train['dropoff_cluster'] = kmeans.predict(train[['dropoff_latitude', 'dropoff_longitude']])
 
-train.to_csv('train_processed_converted', index=False)
+
 
 
 
@@ -177,18 +173,50 @@ PCA features
 """
 from sklearn.decomposition import PCA
 coords = np.vstack((train[['pickup_latitude', 'pickup_longitude']].values,
-                    train[['dropoff_latitude', 'dropoff_longitude']].values,
-                    test[['pickup_latitude', 'pickup_longitude']].values,
-                    test[['dropoff_latitude', 'dropoff_longitude']].values))
+                    train[['dropoff_latitude', 'dropoff_longitude']].values))
 
 pca = PCA().fit(coords)
-
 
 train['pickup_pca0'] = pca.transform(train[['pickup_latitude', 'pickup_longitude']])[:, 0]
 train['pickup_pca1'] = pca.transform(train[['pickup_latitude', 'pickup_longitude']])[:, 1]
 train['dropoff_pca0'] = pca.transform(train[['dropoff_latitude', 'dropoff_longitude']])[:, 0]
 train['dropoff_pca1'] = pca.transform(train[['dropoff_latitude', 'dropoff_longitude']])[:, 1]
 train['pca_manhattan'] = np.abs(train['dropoff_pca1'] - train['pickup_pca1']) + np.abs(train['dropoff_pca0'] - train['pickup_pca0'])
+
+
+train.to_csv('train_processed_converted', index=False)
+
+train = pd.read_csv('train_processed_converted')
+
+
+
+
+"""
+Add and merge weather data
+"""
+
+## Add weather
+#weather = pd.read_csv('weather_daily.csv')
+#weather.replace('T', 0.001, inplace=True)
+#weather['date'] = pd.to_datetime(weather['date'], dayfirst=True).dt.date
+#weather['average temperature'] = weather['average temperature'].astype(np.float64)
+#weather['precipitation'] = weather['precipitation'].astype(np.float64)
+#weather['snow fall'] = weather['snow fall'].astype(np.float64)
+#weather['snow depth'] = weather['snow depth'].astype(np.float64)
+weather_hour = pd.read_csv('weather_hourly.csv')
+weather_hour['Datetime'] = pd.to_datetime(weather_hour['pickup_datetime'], dayfirst=True)
+weather_hour['date'] = weather_hour.Datetime.dt.date
+weather_hour['pickup_hour'] = weather_hour.Datetime.dt.hour
+weather_hour['pickup_hour'] = weather_hour.pickup_hour.astype(np.int8)
+weather_hour['fog'] = weather_hour.fog.astype(np.int8)
+weather_hour = weather_hour[['date', 'pickup_hour', 'tempm', 'dewptm', 'hum', 'wspdm', 
+                             'wdird', 'vism', 'pressurei', 'fog']]
+train.fillna(0, inplace = True)
+
+train['date'] = pd.to_datetime(train.pickup_datetime).dt.date # adding date column
+train = pd.merge(left=train, right=weather_hour.drop_duplicates(subset=['date', 'pickup_hour']), 
+                  on=['date', 'pickup_hour'], how='left')
+
 
 """
 Test set processing
@@ -204,24 +232,37 @@ test['day_of_week'] = test.pickup_datetime.dt.dayofweek
 test['direction'] = bearing_array(test['pickup_latitude'].values, test['pickup_longitude'].values, 
                                          test['dropoff_latitude'].values, test['dropoff_longitude'].values)
 
-test['trip_distance'] = test.apply(lambda x: getDistance(x['pickup_latitude'], 
-                                                       x['pickup_longitude'],
-                                                        x['dropoff_latitude'],
-                                                        x['dropoff_longitude']
-                                                       ), axis = 1 )
-test['trip_distance_manhattan'] = manhattan_distances(test['pickup_longitude'],
-                                                      test['dropoff_longitude'],
-                                                     test['pickup_latitude'],
-                                                    test['dropoff_latitude'])
+test['trip_distance'] = haversine_distance(test['pickup_latitude'], 
+                                                   test['pickup_longitude'],
+                                                    test['dropoff_latitude'],
+                                                    test['dropoff_longitude'])
 
+test['trip_distance_manhattan'] = manhattan_distance(test['pickup_latitude'],
+                                                      test['pickup_longitude'],
+                                                     test['dropoff_latitude'],
+                                                    test['dropoff_longitude'])
+
+coords = np.vstack((test[['pickup_latitude', 'pickup_longitude']].values,
+                    test[['dropoff_latitude', 'dropoff_longitude']].values))
+pca = PCA().fit(coords)
 test['pickup_pca0'] = pca.transform(test[['pickup_latitude', 'pickup_longitude']])[:, 0]
 test['pickup_pca1'] = pca.transform(test[['pickup_latitude', 'pickup_longitude']])[:, 1]
 test['dropoff_pca0'] = pca.transform(test[['dropoff_latitude', 'dropoff_longitude']])[:, 0]
 test['dropoff_pca1'] = pca.transform(test[['dropoff_latitude', 'dropoff_longitude']])[:, 1]
 test['pca_manhattan'] = np.abs(test['dropoff_pca1'] - test['pickup_pca1']) + np.abs(test['dropoff_pca0'] - test['pickup_pca0'])
 
-
 test.to_csv('test_processed_converted', index=False)
+
+test = pd.read_csv('test_processed_converted')
+
+
+test['date'] = pd.to_datetime(test.pickup_datetime).dt.date # adding date column
+test = pd.merge(left=test, right=weather_hour.drop_duplicates(subset=['date', 'pickup_hour']), 
+                 on=['date', 'pickup_hour'], how='left')
+
+
+
+
 
 """
 Training and test split
@@ -245,10 +286,12 @@ features = ['vendor_id',
              'pickup_pca1',
              'dropoff_pca0',
              'dropoff_pca1',
-             'pca_manhattan'
-#             'total_distance_2',
-#             'total_travel_time_2',
-#             'number_of_steps_2'
+             'pca_manhattan',
+             'pickup_longitude',
+             'pickup_latitude',
+             'dropoff_longitude',
+             'dropoff_latitude',
+             'tempm', 'dewptm', 'hum', 'wspdm', 'wdird', 'vism', 'pressurei', 'fog'
              ]
 X_train, X_test, y_train, y_test = train_test_split(train[features], y, test_size = 0.2, random_state = 0)
 
@@ -278,8 +321,6 @@ y_pred_xgb2 = model.predict(dtest)
 
 
 
-
-
 #from sklearn.grid_search import GridSearchCV
 #cv_params = {'max_depth': [3,5,7], 'min_child_weight': [1,3,5]}
 #ind_params = {'learning_rate': 0.1, 'n_estimators': 1000, 'seed':0, 'subsample': 0.8, 'colsample_bytree': 0.8, 
@@ -290,6 +331,9 @@ y_pred_xgb2 = model.predict(dtest)
 #
 #optimized_GBM.fit(X_train, y_train)
 #print (optimized_GBM.grid_scores_)
+
+
+
 
 
 
@@ -307,10 +351,11 @@ def lgb_rmsle_score(preds, dtrain):
 d_train = lgb.Dataset(X_train, y_train)
 
 lgb_params = {
-    'learning_rate': 0.05, # try 0.2
-    'max_depth': 8,
-    'num_leaves': 80, 
+    'learning_rate': 0.04, # try 0.2
+    'max_depth': 10,
+    'num_leaves': 70, 
     'objective': 'regression',
+    'seed': 2017,
     #'metric': {'rmse'},
     'feature_fraction': 0.9,
     'bagging_fraction': 0.5,
@@ -334,7 +379,7 @@ def dummy_rmsle_score(preds, y):
 # Train a model
 model_lgb = lgb.train(lgb_params, 
                       d_train, 
-                      feval=lgb_rmsle_score, 
+                      feval=lgb_rmsle_score,
                       num_boost_round=n_rounds)
 # Predict on train
 y_train_pred = model_lgb.predict(X_train)
@@ -345,6 +390,54 @@ print('RMSLE on valid = {}'.format(dummy_rmsle_score(y_valid_pred, y_test)))
 
 y_test_pred_lightgbm = model_lgb.predict(test[features])
 
+
+
+"""
+Grid Search
+"""
+
+from sklearn.model_selection import GridSearchCV
+from lightgbm.sklearn import LGBMRegressor
+estimator = LGBMRegressor(
+        num_leaves = 80, # cv调节50是最优值
+        max_depth = 8,
+        learning_rate =0.3, 
+        n_estimators = 1000, 
+        objective = 'regression', 
+        min_child_weight = 1, 
+#        subsample = 0.8,
+#        colsample_bytree=0.8,
+        nthread = 7,
+    )
+
+
+def print_best_score(gsearch,param_test):
+     # 输出best score
+    print("Best score: %0.3f" % gsearch.best_score_)
+    print("Best parameters set:")
+    # 输出最佳的分类器到底使用了怎样的参数
+    best_parameters = gsearch.best_estimator_.get_params()
+    for param_name in sorted(param_test.keys()):
+        print("\t%s: %r" % (param_name, best_parameters[param_name]))
+
+# Create parameters to search
+gridParams = {
+    'learning_rate': [0.3],
+#    'n_estimators': [8,24,48],
+    'num_leaves': range(50, 100, 10),
+#    'boosting_type' : ['gbdt'],
+#    'objective' : ['binary'],
+#    'seed' : [500],
+#    'colsample_bytree' : [0.65, 0.75, 0.8],
+#    'subsample' : [0.7,0.75],
+    'reg_alpha': [1,2,6],
+    'reg_lambda': [1,2,6],
+    }
+# Create the grid
+grid = GridSearchCV(estimator, gridParams, verbose=10, cv=4, n_jobs=-1)
+# Run the grid
+grid.fit(X_train, y_train)
+print_best_score(grid,gridParams)
 
 
 
