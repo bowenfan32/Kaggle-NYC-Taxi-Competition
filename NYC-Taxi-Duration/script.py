@@ -67,39 +67,10 @@ Convert Datetime
 
 train = pd.read_csv('train_processed.csv')
 train['pickup_datetime'] = pd.to_datetime(train.pickup_datetime)
-train['dropoff_datetime'] = pd.to_datetime(train.dropoff_datetime)
 train['pickup_hour'] = train.pickup_datetime.dt.hour
 train['day_of_year'] = train.pickup_datetime.dt.dayofyear
 train['day_of_week'] = train.pickup_datetime.dt.dayofweek
-
-
-
-"""
-Visualization
-"""
-# Remove location outliers
-xlim = [-74.03, -73.77]
-ylim = [40.63, 40.85]
-train = train[(train.pickup_longitude> xlim[0]) & (train.pickup_longitude < xlim[1])]
-train = train[(train.dropoff_longitude> xlim[0]) & (train.dropoff_longitude < xlim[1])]
-train = train[(train.pickup_latitude> ylim[0]) & (train.pickup_latitude < ylim[1])]
-train = train[(train.dropoff_latitude> ylim[0]) & (train.dropoff_latitude < ylim[1])]
-# Visualize data points
-longitude = list(train.pickup_longitude) + list(train.dropoff_longitude)
-latitude = list(train.pickup_latitude) + list(train.dropoff_latitude)
-plt.figure(figsize = (10,10))
-plt.plot(longitude,latitude,'.', alpha = 0.4, markersize = 0.05)
-plt.show()
-
-
-f,axarr = plt.subplots(ncols=2,nrows=1,figsize=(12,6))
-axarr[0].scatter(range(train.shape[0]), np.sort(train.trip_duration.values))
-q = train.trip_duration.quantile(0.99)
-train = train[train.trip_duration < q]
-axarr[1].scatter(range(train.shape[0]), np.sort(train.trip_duration.values))
-
-plt.show()
-
+train['minute_of_hour'] = train.pickup_datetime.dt.minute
 
 
 
@@ -166,8 +137,6 @@ train['dropoff_cluster'] = kmeans.predict(train[['dropoff_latitude', 'dropoff_lo
 
 
 
-
-
 """
 PCA features
 """
@@ -184,10 +153,17 @@ train['dropoff_pca1'] = pca.transform(train[['dropoff_latitude', 'dropoff_longit
 train['pca_manhattan'] = np.abs(train['dropoff_pca1'] - train['pickup_pca1']) + np.abs(train['dropoff_pca0'] - train['pickup_pca0'])
 
 
-train.to_csv('train_processed_converted', index=False)
 
-train = pd.read_csv('train_processed_converted')
+"""
+Extra features
+"""
 
+train['pickup_latitude_round3'] = np.round(train['pickup_latitude'], 3)
+train['pickup_longitude_round3'] = np.round(train['pickup_longitude'], 3)
+train['dropoff_latitude_round3'] = np.round(train['dropoff_latitude'], 3)
+train['dropoff_longitude_round3'] = np.round(train['dropoff_longitude'], 3)
+train['center_latitude'] = (train['pickup_latitude_round3'].values + train['dropoff_latitude_round3'].values) / 2
+train['center_longitude'] = (train['pickup_longitude_round3'].values + train['dropoff_longitude_round3'].values) / 2
 
 
 
@@ -218,6 +194,18 @@ train = pd.merge(left=train, right=weather_hour.drop_duplicates(subset=['date', 
                   on=['date', 'pickup_hour'], how='left')
 
 
+
+
+
+
+
+
+train.to_csv('train_processed_converted', index=False)
+
+train = pd.read_csv('train_processed_converted')
+
+
+
 """
 Test set processing
 """
@@ -229,6 +217,7 @@ test.pickup_datetime=pd.to_datetime(test.pickup_datetime)
 test['pickup_hour'] = test.pickup_datetime.dt.hour
 test['day_of_year'] = test.pickup_datetime.dt.dayofyear
 test['day_of_week'] = test.pickup_datetime.dt.dayofweek
+test['minute_of_hour'] = test.pickup_datetime.dt.minute
 test['direction'] = bearing_array(test['pickup_latitude'].values, test['pickup_longitude'].values, 
                                          test['dropoff_latitude'].values, test['dropoff_longitude'].values)
 
@@ -251,17 +240,25 @@ test['dropoff_pca0'] = pca.transform(test[['dropoff_latitude', 'dropoff_longitud
 test['dropoff_pca1'] = pca.transform(test[['dropoff_latitude', 'dropoff_longitude']])[:, 1]
 test['pca_manhattan'] = np.abs(test['dropoff_pca1'] - test['pickup_pca1']) + np.abs(test['dropoff_pca0'] - test['pickup_pca0'])
 
-test.to_csv('test_processed_converted', index=False)
-
-test = pd.read_csv('test_processed_converted')
+test['pickup_latitude_round3'] = np.round(test['pickup_latitude'], 3)
+test['pickup_longitude_round3'] = np.round(test['pickup_longitude'], 3)
+test['dropoff_latitude_round3'] = np.round(test['dropoff_latitude'], 3)
+test['dropoff_longitude_round3'] = np.round(test['dropoff_longitude'], 3)
+test['center_latitude'] = (test['pickup_latitude_round3'].values + test['dropoff_latitude_round3'].values) / 2
+test['center_longitude'] = (test['pickup_longitude_round3'].values + test['dropoff_longitude_round3'].values) / 2
 
 
 test['date'] = pd.to_datetime(test.pickup_datetime).dt.date # adding date column
 test = pd.merge(left=test, right=weather_hour.drop_duplicates(subset=['date', 'pickup_hour']), 
                  on=['date', 'pickup_hour'], how='left')
+test.fillna(0, inplace = True)
 
 
 
+
+test.to_csv('test_processed_converted', index=False)
+
+test = pd.read_csv('test_processed_converted')
 
 
 """
@@ -269,11 +266,13 @@ Training and test split
 """
 y = np.log(train['trip_duration'].values + 1)
 from sklearn.cross_validation import train_test_split
-features = ['vendor_id',
+features = [
+            'vendor_id',
              'passenger_count',
              'pickup_hour',
              'day_of_year',
              'day_of_week',
+             'minute_of_hour',
              'trip_distance',
              'trip_distance_manhattan',
              'pickup_cluster',
@@ -287,11 +286,14 @@ features = ['vendor_id',
              'dropoff_pca0',
              'dropoff_pca1',
              'pca_manhattan',
-             'pickup_longitude',
-             'pickup_latitude',
-             'dropoff_longitude',
-             'dropoff_latitude',
-             'tempm', 'dewptm', 'hum', 'wspdm', 'wdird', 'vism', 'pressurei', 'fog'
+#             'pickup_latitude_round3',
+#             'pickup_longitude_round3',
+#             'dropoff_latitude_round3',
+#             'dropoff_longitude_round3',
+             'center_latitude',
+             'center_longitude',
+             'tempm', 'dewptm', 'hum', 'wspdm', 'wdird', 'pressurei'
+#             'vism','fog'
              ]
 X_train, X_test, y_train, y_test = train_test_split(train[features], y, test_size = 0.2, random_state = 0)
 
@@ -308,17 +310,13 @@ dvalid = xgb.DMatrix(X_test, label=y_test)
 dtest = xgb.DMatrix(test[features])
 watchlist = [(dtrain, 'train'), (dvalid, 'valid')]
 
-# Try different parameters! My favorite is random search :)
-xgb_pars = {'min_child_weight': 10, 'eta': 0.05, 'colsample_bytree': 0.8, 'max_depth': 10,
+xgb_pars = {'min_child_weight': 5, 'eta': 0.05, 'colsample_bytree': 0.8, 'max_depth': 10,
             'subsample': 0.8, 'lambda': 1., 'nthread': -1, 'booster' : 'gbtree', 'silent': 1,
             'eval_metric': 'rmse', 'objective': 'reg:linear'}
-# You could try to train with more epoch
 model = xgb.train(xgb_pars, dtrain, 6000, watchlist, early_stopping_rounds=50,
                   maximize=False, verbose_eval=10)
 
 y_pred_xgb2 = model.predict(dtest)
-
-
 
 
 #from sklearn.grid_search import GridSearchCV
@@ -331,8 +329,6 @@ y_pred_xgb2 = model.predict(dtest)
 #
 #optimized_GBM.fit(X_train, y_train)
 #print (optimized_GBM.grid_scores_)
-
-
 
 
 
@@ -351,11 +347,11 @@ def lgb_rmsle_score(preds, dtrain):
 d_train = lgb.Dataset(X_train, y_train)
 
 lgb_params = {
-    'learning_rate': 0.04, # try 0.2
+    'learning_rate': 0.05, # try 0.2
     'max_depth': 10,
-    'num_leaves': 70, 
+    'num_leaves':70, 
     'objective': 'regression',
-    'seed': 2017,
+#    'seed': 2017,
     #'metric': {'rmse'},
     'feature_fraction': 0.9,
     'bagging_fraction': 0.5,
@@ -380,6 +376,7 @@ def dummy_rmsle_score(preds, y):
 model_lgb = lgb.train(lgb_params, 
                       d_train, 
                       feval=lgb_rmsle_score,
+                      verbose_eval=True,
                       num_boost_round=n_rounds)
 # Predict on train
 y_train_pred = model_lgb.predict(X_train)
@@ -453,24 +450,6 @@ feature_imp = pd.Series(dict(zip(X_train.columns, model_lgb.feature_importance()
 print(feature_imp)
 
 
-"""
-Calculate accuracy
-"""
-
-#def rmsle(predicted,real):
-#    sum=0.0
-#    i= 0
-#    for x in range(len(predicted)):
-#
-#        p = np.log(predicted[x]+1)
-#        r = np.log(real[x]+1)
-#        sum = sum + (p - r)**2
-#    return (sum/len(predicted))**0.5
-#
-#error = rmsle(y_pred_xgb2, y_test)
-#print(error)
-
-
 
 """
 Submission
@@ -479,4 +458,64 @@ Submission
 test['trip_duration'] = np.exp(y_test_pred_lightgbm) - 1
 out = test[['id','trip_duration']]
 out.to_csv('submission.csv', index = False)
-#out.drop_duplicates(subset = ['id'], keep = 'first').to_csv('submission.csv', index = False)
+
+
+
+
+
+
+
+
+"""
+Visualization
+"""
+# Remove location outliers
+xlim = [-74.03, -73.77]
+ylim = [40.63, 40.85]
+train = train[(train.pickup_longitude> xlim[0]) & (train.pickup_longitude < xlim[1])]
+train = train[(train.dropoff_longitude> xlim[0]) & (train.dropoff_longitude < xlim[1])]
+train = train[(train.pickup_latitude> ylim[0]) & (train.pickup_latitude < ylim[1])]
+train = train[(train.dropoff_latitude> ylim[0]) & (train.dropoff_latitude < ylim[1])]
+# Visualize data points
+longitude = list(train.pickup_longitude) + list(train.dropoff_longitude)
+latitude = list(train.pickup_latitude) + list(train.dropoff_latitude)
+plt.figure(figsize = (10,10))
+plt.plot(longitude,latitude,'.', alpha = 0.4, markersize = 0.05)
+plt.show()
+
+
+f,axarr = plt.subplots(ncols=2,nrows=1,figsize=(12,6))
+axarr[0].scatter(range(train.shape[0]), np.sort(train.trip_duration.values))
+q = train.trip_duration.quantile(0.99)
+train = train[train.trip_duration < q]
+axarr[1].scatter(range(train.shape[0]), np.sort(train.trip_duration.values))
+
+plt.show()
+
+
+
+
+# Visualize Clusters
+city_long_border = (-74.03, -73.75)
+city_lat_border = (40.63, 40.85)
+fig, ax = plt.subplots(ncols=1, nrows=1)
+ax.scatter(train.pickup_longitude.values[:], train.pickup_latitude.values[:], s=1, lw=0,
+           c=train.pickup_cluster[:].values, cmap='tab20', alpha=0.2)
+ax.set_xlim(city_long_border)
+ax.set_ylim(city_lat_border)
+ax.set_xlabel('Longitude')
+ax.set_ylabel('Latitude')
+plt.show()
+
+
+
+
+
+fig, ax = plt.subplots(ncols=1, nrows=1)
+#ax.plot(train.groupby('pickup_hour').pickup_hour.count(), 'bo-', lw=2, alpha=0.7)
+#ax.plot(train.groupby('day_of_week').day_of_week.count(), 'go-', lw=2, alpha=0.7)
+ax.plot(train.groupby('day_of_year').day_of_year.count(), 'ro-', lw=2, alpha=0.7)
+ax.set_xlabel('Day of the year')
+ax.set_ylabel('No. of trips')
+fig.suptitle('Number of trips in a year')
+plt.show()
